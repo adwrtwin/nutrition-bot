@@ -1,27 +1,35 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
-import requests
-from dotenv import load_dotenv
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
+# Получение токена из переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я бот-нутрициолог. Напишите 'меню' для пробного дня.")
+def start(update: Update, context: CallbackContext) -> None:
+    """Отправляет сообщение когда получена команда /start"""
+    user = update.effective_user
+    update.message.reply_markdown_v2(
+        fr'Привет {user.mention_markdown_v2()}\! Я бот\-нутрициолог\. Напишите "меню" для пробного дня\.'
+    )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_message = update.message.text
-        
-        if "меню" in user_message.lower():
-            menu_text = """
+def help_command(update: Update, context: CallbackContext) -> None:
+    """Отправляет сообщение когда получена команда /help"""
+    update.message.reply_text('Напишите "меню" для получения пробного меню.')
+
+def handle_message(update: Update, context: CallbackContext) -> None:
+    """Обрабатывает входящие текстовые сообщения"""
+    text = update.message.text.lower()
+    
+    if "меню" in text:
+        menu_text = """
 🍽️ ПРОБНОЕ МЕНЮ НА ДЕНЬ:
 
 ЗАВТРАК: Белковый омлет
@@ -36,21 +44,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • 200г трески + брокколи + морковь
 • КБЖУ: 280 ккал • Б: 25г • Ж: 8г • У: 20г
 """
-            await update.message.reply_text(menu_text)
-            return
-            
-        await update.message.reply_text("Пока я умею только показывать меню. Напишите 'меню'")
-            
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        await update.message.reply_text("Произошла ошибка")
+        update.message.reply_text(menu_text)
+    else:
+        update.message.reply_text('Пока я умею только показывать меню. Напишите "меню"')
 
-def main():
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Бот запущен...")
-    application.run_polling()
+def main() -> None:
+    """Запускает бота."""
+    # Создаем Updater и передаем ему токен бота.
+    updater = Updater(BOT_TOKEN)
 
-if __name__ == "__main__":
+    # Получаем диспетчер для регистрации обработчиков
+    dispatcher = updater.dispatcher
+
+    # Регистрируем обработчики команд
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("help", help_command))
+
+    # Регистрируем обработчик текстовых сообщений
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+
+    # Запускаем бота
+    updater.start_polling()
+
+    # Запускаем бота до тех пор, пока пользователь не остановит его (Ctrl+C)
+    updater.idle()
+
+if __name__ == '__main__':
     main()
