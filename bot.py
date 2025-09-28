@@ -1,11 +1,28 @@
 import os
 import logging
+import threading
 from datetime import datetime, timedelta
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from supabase import create_client, Client
 
-# Настройка логирования
+# Настройка Flask для Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Nutrition Bot is running!", 200
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+# Настройка логирования бота
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -60,10 +77,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        user = update.effective_user
         user_message = update.message.text
-        
-        # Сохраняем сообщение в историю (будет реализовано позже)
         
         if "меню" in user_message.lower():
             await send_trial_menu(update)
@@ -100,9 +114,8 @@ async def send_trial_menu(update: Update):
 """
     await update.message.reply_text(menu_text)
 
-def main():
+def run_bot():
     application = Application.builder().token(BOT_TOKEN).build()
-    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
@@ -110,4 +123,10 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Запускаем бота в основном потоке
+    run_bot()
