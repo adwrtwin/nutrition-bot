@@ -1,11 +1,9 @@
 import os
 import logging
 import threading
-from datetime import datetime, timedelta
 from flask import Flask
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from supabase import create_client, Client
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # Настройка Flask для Render
 app = Flask(__name__)
@@ -22,77 +20,40 @@ def run_flask():
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
 
-# Настройка логирования бота
-logging.basicConfig(level=logging.INFO)
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Получение переменных окружения
+# Получение токена из переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Инициализация Supabase клиента
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Временное хранилище пользователей
+user_data = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        telegram_id = user.id
-        user_name = user.first_name or "Пользователь"
-        
-        # Проверяем, есть ли пользователь в базе
-        response = supabase.table("users").select("*").eq("telegram_id", telegram_id).execute()
-        
-        if len(response.data) == 0:
-            # Создаем нового пользователя
-            trial_ends_at = (datetime.now() + timedelta(days=3)).isoformat()
-            new_user = {
-                "telegram_id": telegram_id,
-                "name": user_name,
-                "tariff": "trial",
-                "trial_ends_at": trial_ends_at,
-                "created_at": datetime.now().isoformat()
-            }
-            user_data = supabase.table("users").insert(new_user).execute()
-            
-            await update.message.reply_text(
-                f"Привет {user_name}! 👋\n"
-                f"Я бот-нутрициолог. У вас начался пробный период на 3 дня.\n\n"
-                f"Напишите 'меню' для получения пробного меню или задайте вопрос о питании."
-            )
-        else:
-            # Пользователь уже существует
-            user_data = response.data[0]
-            days_left = (datetime.fromisoformat(user_data['trial_ends_at']) - datetime.now()).days
-            
-            await update.message.reply_text(
-                f"С возвращением, {user_name}! 🌟\n"
-                f"У вас осталось {days_left} дней пробного периода.\n\n"
-                f"Напишите 'меню' для получения меню."
-            )
-            
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении пользователя: {e}")
-        await update.message.reply_text("Привет! Я бот-нутрициолог. Напишите 'меню' для пробного дня.")
+def start(update: Update, context: CallbackContext) -> None:
+    user = update.effective_user
+    user_name = user.first_name or "Пользователь"
+    
+    # Сохраняем пользователя во временное хранилище
+    user_data[user.id] = {
+        "name": user_name,
+        "joined_date": "2024-01-20"
+    }
+    
+    update.message.reply_text(
+        f"Привет {user_name}! 👋\n"
+        f"Я бот-нутрициолог. У вас начался пробный период на 3 дня.\n\n"
+        f"Напишите 'меню' для получения пробного меню."
+    )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_message = update.message.text
-        
-        if "меню" in user_message.lower():
-            await send_trial_menu(update)
-        else:
-            await update.message.reply_text(
-                "Пока я умею показывать меню и отвечать на базовые вопросы.\n"
-                "Напишите 'меню' для получения пробного меню на день."
-            )
-            
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        await update.message.reply_text("Произошла ошибка. Попробуйте еще раз.")
-
-async def send_trial_menu(update: Update):
-    menu_text = """
+def handle_message(update: Update, context: CallbackContext) -> None:
+    text = update.message.text.lower()
+    
+    if "меню" in text:
+        menu_text = """
 🍽️ ПРОБНОЕ МЕНЮ НА ДЕНЬ:
 
 ЗАВТРАК: Белковый омлет
@@ -112,21 +73,32 @@ async def send_trial_menu(update: Update):
 • Список покупок с экономией
 • Персональные рекомендации
 """
-    await update.message.reply_text(menu_text)
+        update.message.reply_text(menu_text)
+    else:
+        update.message.reply_text('Пока я умею только показывать меню. Напишите "меню"')
 
-def run_bot():
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    print("Бот запущен с интеграцией Supabase...")
-    application.run_polling()
-
-if __name__ == "__main__":
+def main():
     # Запускаем Flask в отдельном потоке
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота в основном потоке
-    run_bot()
+    # Создаем Updater (для версии 13.15)
+    updater = Updater(BOT_TOKEN, use_context=True)
+    
+    # Получаем диспетчер для регистрации обработчиков
+    dispatcher = updater.dispatcher
+    
+    # Регистрируем обработчики команд
+    dispatcher.add_handler(CommandHandler("start", start))
+    
+    # Регистрируем обработчик текстовых сообщений
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    
+    # Запускаем бота
+    print("Бот запущен с версией python-telegram-bot 13.15...")
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
