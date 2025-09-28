@@ -13,6 +13,10 @@ app = Flask(__name__)
 def home():
     return "Nutrition Bot is running!", 200
 
+@app.route('/health')
+def health():
+    return "OK", 200
+
 def run_flask():
     if os.environ.get('RENDER'):
         os.environ['WERKZEUG_RUN_MAIN'] = 'true'
@@ -211,6 +215,11 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             "Или 'тарифы' для просмотра доступных тарифов"
         )
 
+def stop_bot(update: Update, context: CallbackContext) -> None:
+    """Останавливает бота (только для администраторов)"""
+    update.message.reply_text("Бот останавливается...")
+    context.bot.stop()
+
 def main():
     # Создаем файл данных если его нет
     if not os.path.exists(DATA_FILE):
@@ -221,15 +230,29 @@ def main():
     flask_thread.daemon = True
     flask_thread.start()
     
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-    
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-    
-    print("Бот запущен с JSON хранилищем...")
-    updater.start_polling()
-    updater.idle()
+    try:
+        updater = Updater(BOT_TOKEN, use_context=True)
+        dispatcher = updater.dispatcher
+        
+        dispatcher.add_handler(CommandHandler("start", start))
+        dispatcher.add_handler(CommandHandler("stop", stop_bot))
+        dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+        
+        print("Бот запущен с JSON хранилищем...")
+        
+        # Запускаем с обработкой конфликтов
+        updater.start_polling(
+            drop_pending_updates=True,  # Игнорировать pending updates при старте
+            timeout=30,
+            allowed_updates=None
+        )
+        
+        # Ожидаем завершения
+        updater.idle()
+        
+    except Exception as e:
+        logger.error(f"Ошибка запуска бота: {e}")
+        print(f"Критическая ошибка: {e}")
 
 if __name__ == '__main__':
     main()
