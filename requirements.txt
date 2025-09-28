@@ -1,5 +1,10 @@
 python-telegram-bot==13.15
-supabase==1.1.1
 requests==2.31.0
 python-dotenv==1.0.0
 flask==2.3.3
+supabase==1.1.1
+postgrest-py==0.10.6
+realtime-py==0.1.5
+gotrue-py==0.3.4
+storage3-py==0.4.0
+httpx==0.24.1
